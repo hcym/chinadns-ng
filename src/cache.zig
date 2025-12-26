@@ -163,17 +163,17 @@ pub fn get(
     }
 }
 
-pub fn add(msg: []const u8, qnamelen: c_int, p_ttl: *i32) bool {
+pub fn add(msg: []u8, qnamelen: c_int, p_ttl: *i32) bool {
     if (!enabled())
         return false;
 
-    if (dns.is_tc(msg) or dns.get_rcode(msg) != c.DNS_RCODE_NOERROR)
+    if (!dns.is_good(msg))
         return false;
 
     if (cache_ignore.is_ignored(msg, qnamelen))
         return false;
 
-    const ttl = dns.get_ttl(msg, qnamelen, g.cache_nodata_ttl) orelse return false;
+    const ttl = dns.get_ttl(msg, qnamelen, g.cache_nodata_ttl, g.cache_min_ttl, g.cache_max_ttl) orelse return false;
     p_ttl.* = ttl;
 
     const cache_msg = b: {

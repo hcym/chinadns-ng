@@ -445,7 +445,6 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
 
     if (g.verbose()) {
         src_addr.to_text(&qlog.src_ip, &qlog.src_port);
-
         qlog.query();
     }
 
@@ -455,14 +454,8 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
         .local => unreachable,
     };
 
-    // tag:null filter
-    if (tag.is_null()) {
-        if (g.verbose()) qlog.filter(.tag_null);
-        const rmsg = dns.empty_reply(msg, qnamelen);
-        return send_reply(rmsg, fdobj, src_addr, bufsz, id, qflags);
-    }
+    // ===================== qtype filter =====================
 
-    // AAAA filter
     if (qtype == c.DNS_TYPE_AAAA) {
         const filter = groups.get_ip6_filter(tag);
         if (filter.filter_query()) {
@@ -472,14 +465,14 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
         }
     }
 
-    // qtype filter
     if (std.mem.indexOfScalar(u16, g.filter_qtypes, qtype) != null) {
         if (g.verbose()) qlog.filter(.qtype);
         const rmsg = dns.empty_reply(msg, qnamelen);
         return send_reply(rmsg, fdobj, src_addr, bufsz, id, qflags);
     }
 
-    // check the local records
+    // ===================== local records =====================
+
     var answer_n: u16 = undefined;
     if (local_rr.find_answer(msg, qnamelen, &answer_n)) |answer| {
         if (g.verbose())
@@ -492,10 +485,17 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
         return send_reply(rmsg, fdobj, src_addr, bufsz, id, qflags);
     }
 
-    // for upstream_group.send()
+    // ===================== remote records =====================
+
+    if (tag.is_null()) {
+        if (g.verbose()) qlog.filter(.tag_null);
+        const rmsg = dns.empty_reply(msg, qnamelen);
+        return send_reply(rmsg, fdobj, src_addr, bufsz, id, qflags);
+    }
+
     var udpi = qflags.from == .udp;
 
-    // check the cache
+    // cache
     var ttl: i32 = undefined;
     var ttl_r: i32 = undefined;
     var add_ip: bool = undefined;
@@ -528,11 +528,9 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
         qflags.from = .local;
     }
 
-    // [verdict cache]
+    // verdict cache
     var tagnone_to_china = true;
     var tagnone_to_trust = true;
-
-    // verdict cache for tag:none domain
     if (tag == .none) {
         if (verdict_cache.get(msg, qnamelen)) |is_china_domain| {
             if (is_china_domain) {
@@ -544,6 +542,8 @@ fn on_query(qmsg: *RcMsg, fdobj: *EvLoop.Fd, src_addr: *const cc.SockAddr, in_qf
             }
         }
     }
+
+    // ===================== forward to upstream =====================
 
     const q = _query_list.add(
         msg,
@@ -649,7 +649,7 @@ fn use_china_reply(msg: []const u8, qnamelen: c_int, p_test_res: *?dns.TestIpRes
             if (g.verbose()) rlog.china_noip();
             break :b g.flags.noip_as_chnip;
         },
-        .other_case => dns.is_tc(msg), // `truncated` or `rcode != 0`
+        .other_case => dns.is_tc(msg), // allow truncate
     };
 }
 
@@ -764,15 +764,14 @@ pub fn on_reply(rmsg: *RcMsg, upstream: *const Upstream) void {
             dns.add_ip(msg, qnamelen, addctx);
         };
 
-    // [sync && nosuspend] send reply to client
-    if (q.flags.from_client())
-        send_reply(msg, q.fdobj, &q.src_addr, q.bufsz, q.id, q.flags);
-
-    // add to cache (may modify the msg)
-    // must come after the `send_reply()`
+    // add to cache (may modify the msg.ttl)
     var ttl: i32 = undefined;
     if (cache.add(msg, qnamelen, &ttl))
         if (g.verbose()) rlog.cache(ttl, msg.len);
+
+    // [sync && nosuspend] send reply to client
+    if (q.flags.from_client())
+        send_reply(msg, q.fdobj, &q.src_addr, q.bufsz, q.id, q.flags);
 
     // must be at the end
     _query_list.del(q);

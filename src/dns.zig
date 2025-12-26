@@ -48,6 +48,10 @@ pub inline fn is_tc(msg: []const u8) bool {
     return c.dns_is_tc(msg.ptr);
 }
 
+pub inline fn is_good(msg: []const u8) bool {
+    return c.dns_is_good(msg.ptr);
+}
+
 /// return the truncated msg (global static buffer)
 pub inline fn truncate(msg: []const u8) []u8 {
     const res_msg = cc.static_buf(c.DNS_QMSG_MAXSIZE);
@@ -97,8 +101,8 @@ pub inline fn add_ip(msg: []const u8, qnamelen: c_int, addctx: *ipset.addctx_t) 
 }
 
 /// return `null` if there is no effective TTL
-pub inline fn get_ttl(msg: []const u8, qnamelen: c_int, nodata_ttl: i32) ?i32 {
-    const ttl = c.dns_get_ttl(msg.ptr, cc.to_isize(msg.len), qnamelen, nodata_ttl);
+pub inline fn get_ttl(msg: []u8, qnamelen: c_int, nodata_ttl: i32, min_ttl: i32, max_ttl: i32) ?i32 {
+    const ttl = c.dns_get_ttl(msg.ptr, cc.to_isize(msg.len), qnamelen, nodata_ttl, min_ttl, max_ttl);
     return if (ttl > 0) ttl else null;
 }
 

@@ -336,6 +336,8 @@ usage: chinadns-ng <options...>. the existing options are as follows:
  --cache-stale <N>                    use stale cache: expired time <= N(second)
  --cache-refresh <N>                  pre-refresh the cached data if TTL <= N(%)
  --cache-nodata-ttl <ttl>             TTL of the NODATA response, default is 60
+ --cache-min-ttl <ttl>                if record.ttl < min_ttl, set ttl to min_ttl
+ --cache-max-ttl <ttl>                if record.ttl > max_ttl, set ttl to max_ttl
  --cache-ignore <domain>              ignore the dns cache for this domain(suffix)
  --cache-db <path>                    dns cache persistence (from/to db file)
  --verdict-cache <size>               enable verdict caching for tag:none domains
@@ -541,6 +543,8 @@ group-upstream 192.168.1.1
   - 2024.04.13 版本起，数据类型从 `u16` 改为 `u32`，以允许设置更大的过期时长。
 - `cache-refresh` 若当前查询的缓存的 TTL 不足初始值的百分之 N，则提前在后台刷新。
 - `cache-nodata-ttl` 给 NODATA 响应提供默认的缓存时长，默认 60 秒，0 表示不缓存。
+- `cache-min-ttl` 若响应记录的 TTL 小于此值，则将其 TTL 修改为此值，0 表示禁用。
+- `cache-max-ttl` 若响应记录的 TTL 大于此值，则将其 TTL 修改为此值，0 表示禁用。
 - `cache-ignore` 不要缓存给定的域名（后缀，最高支持 8 级），此选项可多次指定。
 - `cache-db` 启用缓存持久化，参数是 db 文件路径（可以不预先创建）。
   - 进程启动时，自动从 db 恢复缓存；进程退出时，自动将缓存写回至 db。
@@ -829,6 +833,34 @@ chinadns-ng -g gfwlist.txt -d chn -A gfwlist,gfwlist6
 ```
 
 传统上，这是通过 dnsmasq 来实现的，但 dnsmasq 的 server/ipset/nftset 功能不擅长处理大量域名，影响性能，只是 gfwlist.txt 域名数量比 chnlist.txt 少，所以影响较小。如果你在意性能，如低端路由器，可使用 chinadns-ng 来实现。
+
+---
+
+### 将 default-tag 设置为 null，可实现白名单解析
+
+若只想解析特定域名（如本地 hosts），并在查询其它域名时返回 NODATA 结果（相当于过滤），该如何实现？
+
+chinadns-ng 在收到查询时，会先检查本地资源记录（比如加载的 hosts 文件），再执行域名分组逻辑（tag:chn、tag:gfw、tag:none、自定义组），其中有一个特殊自定义组 `null`，此域名组的任何查询均会返回 NODATA 结果。
+
+因此若想实现上述“白名单解析”逻辑，可将 default-tag 设为 `null`，此配置下，任何不在指定范围内的域名查询均会返回 NODATA 结果。以下是几个相关配置示例：
+
+> chinadns-ng 2025.06.20 版本为此用例调整了逻辑顺序，如有需要，请最新到最新版本。
+
+```shell
+# 只允许查询 /etc/hosts 中的域名
+chinadns-ng --hosts --group null --default-tag null
+
+# 只允许查询 chnlist.txt 中的域名
+chinadns-ng -m chnlist.txt --group null --default-tag null
+
+# 只允许查询 gfwlist.txt 中的域名
+chinadns-ng -g gfwlist.txt --group null --default-tag null
+
+# 只允许查询 /etc/hosts、chnlist.txt、gfwlist.txt、x.txt 中的域名
+chinadns-ng --hosts -m chnlist.txt -g gfwlist.txt \
+          --group x --group-dnl x.txt --group-upstream 1.1.1.1 \
+          --group null --default-tag null
+```
 
 ---
 

@@ -28,6 +28,7 @@
 #define DNS_QR_REPLY 1
 
 #define DNS_RCODE_NOERROR 0
+#define DNS_RCODE_NXDOMAIN 3
 
 #define DNS_CLASS_IN 1
 
@@ -61,6 +62,9 @@ u8 dns_get_rcode(const void *noalias msg);
 
 bool dns_is_tc(const void *noalias msg);
 
+/* !tc && (rcode==noerror || rcode==nxdomain) */
+bool dns_is_good(const void *noalias msg);
+
 /*
 * the msg has been checked by `check_reply()`
 * return the length of the truncated reply-msg
@@ -89,7 +93,7 @@ int dns_test_ip(const void *noalias msg, ssize_t len, int qnamelen, const struct
 void dns_add_ip(const void *noalias msg, ssize_t len, int qnamelen, struct ipset_addctx *noalias ctx);
 
 /* return -1 if failed */
-i32 dns_get_ttl(const void *noalias msg, ssize_t len, int qnamelen, i32 nodata_ttl);
+i32 dns_get_ttl(void *noalias msg, ssize_t len, int qnamelen, i32 nodata_ttl, i32 min_ttl, i32 max_ttl);
 
 /* it should not fail because it has been checked by `get_ttl` */
 void dns_update_ttl(void *noalias msg, ssize_t len, int qnamelen, i32 ttl_change);
